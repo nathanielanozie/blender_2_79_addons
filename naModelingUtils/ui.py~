@@ -1,0 +1,77 @@
+#naModelingUtilsAddOn.py
+#modify use at your own risk
+bl_info = {
+    "name":"modeling tools for facial modeling rigging",
+    "category": "Object"
+}
+
+import bpy
+
+from bpy.types import(
+    Operator,
+    Panel
+    )
+
+#assumes file lives in addons folder
+import naModelingUtils
+import imp
+imp.reload(naModelingUtils)
+
+class makeMeshWholeOperator(Operator):
+    bl_idname = "obj.makemeshwhole" #needs to be all lowercase
+    bl_label = "makeMeshWhole"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        naModelingUtils.makeMeshWhole(context.selected_objects[0])
+        return {'FINISHED'}
+        
+class centerSelectedVerticesOperator(Operator):
+    bl_idname = "obj.centerselectedvertices"
+    bl_label = "centerSelectedVertices"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        #print(context.selected_objects)
+        #self.report({'INFO'}, "context.selected_objects: %s" %context.selected_objects )
+        naModelingUtils.centerSelectedVertices(context.selected_objects[0])
+        return {'FINISHED'}
+        
+class deleteHalfMeshOperator(Operator):
+    bl_idname = "obj.deletehalfmesh"
+    bl_label = "deleteHalfMesh"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        #print(context.selected_objects)
+        #self.report({'INFO'}, "context.selected_objects: %s" %context.selected_objects )
+        naModelingUtils.deleteHalfMesh(context.selected_objects[0])
+        return {'FINISHED'}
+        
+        
+class naModelingUtilsPanel(Panel):
+    bl_label = "naModelingUtils Panel"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    
+    def draw(self, context):
+        layout = self.layout
+        #layout.label(text = "Modeling tool")
+        layout.operator( "obj.makemeshwhole")
+        layout.operator( "obj.centerselectedvertices")
+        layout.operator( "obj.deletehalfmesh")
+        
+def register():
+    bpy.utils.register_class(makeMeshWholeOperator)
+    bpy.utils.register_class(centerSelectedVerticesOperator)
+    bpy.utils.register_class(deleteHalfMeshOperator)
+    bpy.utils.register_class(naModelingUtilsPanel)
+    
+def unregister():
+    bpy.utils.unregister_class(makeMeshWholeOperator)
+    bpy.utils.unregister_class(centerSelectedVerticesOperator)
+    bpy.utils.unregister_class(deleteHalfMeshOperator)
+    bpy.utils.unregister_class(naModelingUtilsPanel)
+
+if __name__ == "__main__":
+    register()

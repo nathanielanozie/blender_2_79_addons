@@ -1,0 +1,25 @@
+import bpy 
+
+bl_info = {
+    "name": "Test MultiFile Addon",
+    "author": "Nathaniel Anozie",
+    "version": (0, 1),
+    "blender": (2, 79, 0),
+    "location": "3D View",
+    "description": "does nothing",
+    "category": "Object",
+}
+
+from . import ui
+#from . import test
+
+def register():
+    ui.register()
+    #bpy.utils.register_module(__name__)
+    
+def unregister():
+    ui.unregister()
+    #bpy.utils.unregister_module(__name__)
+    
+if __name__ == "__main__":
+    register()

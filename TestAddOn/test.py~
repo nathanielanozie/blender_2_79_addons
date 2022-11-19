@@ -1,0 +1,6 @@
+
+import bpy
+
+def printObjects():
+    for obj in bpy.data.objects:
+        print( "Testing >> "+obj.name )

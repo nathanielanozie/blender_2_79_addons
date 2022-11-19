@@ -1,0 +1,426 @@
+#this module has methods for the core of this tool
+
+
+#last modified
+#todo: found bug with multiple chars jack then jill the jill head mover moves jack as well
+#061722 - working on simplification
+
+
+import imp
+import bpy
+
+from . import naControls
+from . import naUtils
+from . import naShapekeys
+
+
+FC_CHAR_NAME = "TestChar"
+FC_ARMATURE_NAME = "{}_simpleRobot".format(FC_CHAR_NAME)
+FC_ROOT_BONE_NAME = "{}_simpleRobotRoot".format(FC_CHAR_NAME) 
+FACEGEO_NAMES = {'brow':'{}_brow'.format(FC_CHAR_NAME),'eye':'{}_eye'.format(FC_CHAR_NAME),'mouth':'{}_mouth'.format(FC_CHAR_NAME),'head':'{}_head'.format(FC_CHAR_NAME)}#{'brow':'brow','eye':'eye','mouth':'mouth','head':'head'}
+
+FC_HEAD_STRETCH_BONE_NAMES = {  'mid': {'name':'{}_STMid'.format(FC_CHAR_NAME), 'position':{'head':(0,0,0),'tail':(0,0,2)} },
+                        'hi': {'name':'{}_STHi'.format(FC_CHAR_NAME), 'position':{'head':(0,0,2),'tail':(0,0,3)} },
+                        'lo': {'name':'{}_STLo'.format(FC_CHAR_NAME), 'position':{'head':(0,0,-2),'tail':(0,0,0)} }
+                     }
+FC_HEAD_BONE_NAME = { 'head': {'name':'{}_head'.format(FC_CHAR_NAME), 'position':{'head':(0,0,0),'tail':(0,0,3)}  } }
+FC_HEAD_GUIDE_HEAD_NAME = '{}_headGuide'.format(FC_CHAR_NAME)
+FC_HEAD_GUIDE_TAIL_NAME = '{}_tailGuide'.format(FC_CHAR_NAME)
+
+def initGlobalConstants(character = "Test"):
+    """use the ui inputs to create global variable constants
+    """
+    global FC_CHAR_NAME, FC_ARMATURE_NAME, FC_ROOT_BONE_NAME, FACEGEO_NAMES, FC_HEAD_STRETCH_BONE_NAMES, FC_HEAD_BONE_NAME, FC_HEAD_GUIDE_HEAD_NAME, FC_HEAD_GUIDE_TAIL_NAME  
+    
+    FC_CHAR_NAME = character
+    FC_ARMATURE_NAME = "{}_simpleRobot".format(FC_CHAR_NAME)
+    FC_ROOT_BONE_NAME = "{}_simpleRobotRoot".format(FC_CHAR_NAME) 
+    FACEGEO_NAMES = {'brow':'{}_brow'.format(FC_CHAR_NAME),'eye':'{}_eye'.format(FC_CHAR_NAME),'mouth':'{}_mouth'.format(FC_CHAR_NAME),'head':'{}_head'.format(FC_CHAR_NAME)}#{'brow':'brow','eye':'eye','mouth':'mouth','head':'head'}
+    FC_HEAD_STRETCH_BONE_NAMES = {  'mid': {'name':'{}_STMid'.format(FC_CHAR_NAME), 'position':{'head':(0,0,0),'tail':(0,0,2)} },
+                            'hi': {'name':'{}_STHi'.format(FC_CHAR_NAME), 'position':{'head':(0,0,2),'tail':(0,0,3)} },
+                            'lo': {'name':'{}_STLo'.format(FC_CHAR_NAME), 'position':{'head':(0,0,-2),'tail':(0,0,0)} }
+                         }
+    FC_HEAD_BONE_NAME = { 'head': {'name':'{}_head'.format(FC_CHAR_NAME), 'position':{'head':(0,0,0),'tail':(0,0,3)}  } }        
+    
+    #head rig guides empties
+    FC_HEAD_GUIDE_HEAD_NAME = '{}_headGuide'.format(FC_CHAR_NAME)
+    FC_HEAD_GUIDE_TAIL_NAME = '{}_tailGuide'.format(FC_CHAR_NAME)
+
+    #if guide exists update the globals for other bones using guide results
+    if FC_HEAD_GUIDE_HEAD_NAME in bpy.data.objects and FC_HEAD_GUIDE_TAIL_NAME in bpy.data.objects:
+        headPos = tuple( bpy.data.objects[FC_HEAD_GUIDE_HEAD_NAME].location )
+        tailPos = tuple( bpy.data.objects[FC_HEAD_GUIDE_TAIL_NAME].location )
+        #update head bone global
+        FC_HEAD_BONE_NAME = { 'head': {'name':'{}_head'.format(FC_CHAR_NAME), 'position':{'head':headPos,'tail':tailPos}  } }
+        #update head stretch bone globals
+        stretchZOffset = 2 #how much should ends of stretch bones extend from head bone. might want this to be a parameter
+        FC_HEAD_STRETCH_BONE_NAMES = {  'mid': {'name':'{}_STMid'.format(FC_CHAR_NAME), 'position':{'head':headPos,'tail':tailPos} },
+                                'hi': {'name':'{}_STHi'.format(FC_CHAR_NAME), 'position':{'head':tailPos,'tail':(tailPos[0],tailPos[1],tailPos[2]+stretchZOffset)} },
+                                'lo': {'name':'{}_STLo'.format(FC_CHAR_NAME), 'position':{'head':(headPos[0],headPos[1],headPos[2]-stretchZOffset),'tail':headPos} }
+                             }
+                         
+
+def generateGuides():
+    """generate all guides to be used in rig
+    """
+    generateGuideHeadRig()
+
+
+def doIt(context):
+    """build robot face shape key rig
+    """
+    browName = '{}'.format( FACEGEO_NAMES['brow'] )
+    mouthName = '{}'.format( FACEGEO_NAMES['mouth'] )
+    
+    armatureName = FC_ARMATURE_NAME
+    rootBoneName = FC_ROOT_BONE_NAME
+    armatureObj = naUtils.makeFaceArmature(name = armatureName, rootBoneName = rootBoneName )
+    
+    #this is the dependency on blendshapes based rig
+    naShapekeys.makeShapekeys( browName, mouthName, rootBoneName, armatureObj )
+
+    #so have overall mover and possibly ability to stretch head
+    buildHeadRig(useStretch=True)
+    
+    #hide anything that needs to be hidden
+    #ex hide guides used
+    naUtils.UT_PutObjectInLayer( items = [FC_HEAD_GUIDE_HEAD_NAME,FC_HEAD_GUIDE_TAIL_NAME], layer = 19 )
+    
+
+
+
+##########################bone rigs used for face
+def generateGuideHeadRig():
+    """in ui guide should be two spheres for length of head bone. the stretch hi and tail should be an offset from head bone.
+    """
+    for guide in [FC_HEAD_GUIDE_HEAD_NAME,FC_HEAD_GUIDE_TAIL_NAME]:
+        guideObj = bpy.data.objects.new( guide, None )
+        bpy.context.scene.objects.link( guideObj )
+        guideObj.empty_draw_size = 2
+        guideObj.empty_draw_type = "SPHERE"
+    
+    bpy.data.objects[FC_HEAD_GUIDE_HEAD_NAME].location = (0,0,0) #using fixed position for creating guides
+    bpy.data.objects[FC_HEAD_GUIDE_TAIL_NAME].location = (0,0,4)
+
+
+def buildHeadStretch():
+    """creates simple head stretch rig. assumes armature already created
+    
+    returns (low bone, bone with stretching, and end bone )
+    """
+    armatureName = FC_ARMATURE_NAME
+    midBoneName = FC_HEAD_STRETCH_BONE_NAMES['mid']['name']
+    midHeadPos = FC_HEAD_STRETCH_BONE_NAMES['mid']['position']['head']
+    midTailPos = FC_HEAD_STRETCH_BONE_NAMES['mid']['position']['tail']
+    hiBoneName = FC_HEAD_STRETCH_BONE_NAMES['hi']['name']
+    hiHeadPos = FC_HEAD_STRETCH_BONE_NAMES['hi']['position']['head']
+    hiTailPos = FC_HEAD_STRETCH_BONE_NAMES['hi']['position']['tail']
+    loBoneName = FC_HEAD_STRETCH_BONE_NAMES['lo']['name']
+    loHeadPos = FC_HEAD_STRETCH_BONE_NAMES['lo']['position']['head']
+    loTailPos = FC_HEAD_STRETCH_BONE_NAMES['lo']['position']['tail']
+    
+    #create stretch bones
+    naUtils.UT_CreateBone( boneName = midBoneName, 
+                    armatureName = armatureName, 
+                    head = midHeadPos, 
+                    tail = midTailPos, 
+                    roll = 0 )
+    naUtils.UT_CreateBone( boneName = hiBoneName, 
+                    armatureName = armatureName, 
+                    head = hiHeadPos, 
+                    tail = hiTailPos, 
+                    roll = 0 )
+    naUtils.UT_CreateBone( boneName = loBoneName, 
+                    armatureName = armatureName, 
+                    head = loHeadPos, 
+                    tail = loTailPos, 
+                    roll = 0 )
+
+    #do any needed bone parenting
+    naUtils.UT_ParentBone( bone = midBoneName, parent = loBoneName, armatureName = armatureName)
+
+    #add stretch constraint
+    naUtils.UT_CreateStretch( bone = midBoneName,
+                      endBone = hiBoneName,
+                      armatureName = armatureName
+                      )
+                      
+    #add controls to hi and low stretch bones - i think circles
+    
+    return loBoneName, midBoneName, hiBoneName
+    
+def buildHeadRig(useStretch = False):
+    """assumes armature already created
+    useStretch - whether or not using stretch in rig
+    """
+    armatureName = FC_ARMATURE_NAME
+    headBoneName = FC_HEAD_BONE_NAME['head']['name']
+    headPos = FC_HEAD_BONE_NAME['head']['position']['head']
+    tailPos = FC_HEAD_BONE_NAME['head']['position']['tail']
+    
+    #create head bone
+    naUtils.UT_CreateBone( boneName = headBoneName, 
+                    armatureName = armatureName, 
+                    head = headPos, 
+                    tail = tailPos, 
+                    roll = 0 )
+
+    if useStretch:
+        #create head stretch rig
+        low, mid, end = buildHeadStretch()
+        
+        #parent head stretch bones to overall head mover
+        for bn in [low,end]:
+            naUtils.UT_ParentBone( bone = bn, parent = headBoneName, armatureName = armatureName)
+
+        #parent face to mid stretch bone
+        parentFaceToBone( bone = mid )
+        
+        #hide backend bones
+        naUtils.UT_PutInLayer( items = [mid], layer = 32, armatureName = armatureName )
+        
+        #add controls to head stretch bones
+        shpLow = addShapeToBone( shapeName = low+'_ctl', 
+                            boneName = low, 
+                            shape = 'circle', 
+                            scale = 4, 
+                            armatureName = armatureName )
+        shpEnd = addShapeToBone( shapeName = end+'_ctl', 
+                            boneName = end, 
+                            shape = 'circle', 
+                            scale = 4, 
+                            armatureName = armatureName )        
+        #put shp in different layer
+        naUtils.UT_PutObjectInLayer( items = [shpLow,shpEnd], layer = 19 )        
+        
+    else:
+        #parent face to head bone instead
+        parentFaceToBone( bone = headBoneName )
+        
+    #add control to head bone - i think cube    
+    shp = addShapeToBone( shapeName = headBoneName+'_ctl', 
+                        boneName = headBoneName, 
+                        shape = 'cube', 
+                        scale = 1, 
+                        armatureName = armatureName )
+    #put shp in different layer
+    naUtils.UT_PutObjectInLayer( items = [shp], layer = 19 )
+
+        
+def addShapeToBone( shapeName = None,
+                    boneName = None,
+                    shape = 'cube', 
+                    scale = 1, 
+                    armatureName = None ):
+    """adds a control shape to given bone
+    inputs are string shape and bone name. a string shape type supported cube or circle. and string armature name
+    """
+    if not shapeName or not boneName:
+        print("requires a shape and bone name")
+        return
+    if shape not in ['cube','circle','square']:
+        print("requires any shape type of: cube, circle, square")
+        return
+    if not armatureName:
+        print("requires armature string name")
+        return
+    bpy.ops.object.mode_set(mode='OBJECT')        
+    boneShape = None
+    #if shape name exists use it
+    if shapeName in bpy.data.objects:
+        boneShape = bpy.data.objects[shapeName]
+    else:
+        #do drawing of shape
+        if shape == 'cube':
+            boneShape = naControls.drawCubeShape(name = shapeName)
+        elif shape == 'circle':
+            boneShape = naControls.drawCircleShape(name = shapeName)            
+        
+    arm_obj = bpy.data.objects[armatureName]
+    arm_obj.pose.bones[boneName].custom_shape = boneShape #custom shape is poseBone property
+    arm_obj.pose.bones[boneName].custom_shape_scale = scale
+    #show_wire property of Bone (editbone)
+    arm_obj.data.bones[boneName].show_wire=True
+    
+    return shapeName
+
+def parentFaceToBone( bone = None ):
+    """parent all face geometry to given bone
+    """
+    armatureName = FC_ARMATURE_NAME
+    geo = []
+    for key, ge in FACEGEO_NAMES.items():
+        if key in ['eye','brow']:
+            geo.append(ge+'.L')
+            geo.append(ge+'.R')
+        else:
+            geo.append(ge)
+        
+    print("geometry>>>")
+    print(geo)
+    
+    #assumes all geo exists. assumes bone in armature
+    for g in geo:
+        if g not in bpy.data.objects:
+            continue
+        geoObj = bpy.data.objects[g]
+        armObj = bpy.data.objects[armatureName]
+        bpy.ops.object.mode_set(mode='POSE')
+        #boneObj = armObj.pose.bones.get(bone)
+        armObj.data.bones.active = armObj.data.bones[bone]
+        geoObj.select = True
+        bpy.ops.object.parent_set(type = 'BONE')
+
+    
+######################
+
+
+
+
+
+
+
+    
+
+################################
+###helper for drawing robot face
+################################
+def drawRobotFaceMeshPart(context, name = None, shapeData = None):
+    """ draw mesh. if it exists does nothing. it takes name of shape and tuple with lists for verts,edges,faces"""
+    if not name:
+        print("requires a name >> exiting")
+        return
+        
+    scene = context.scene
+    
+    #if data object already created return the object 
+    if name in bpy.data.objects:
+        print("%s is already created doing nothing" %name)
+        return bpy.data.objects[name]
+
+    
+    #create the object in data
+    mesh = bpy.data.meshes.new(name)
+    obj = bpy.data.objects.new(name,mesh)
+    scene.objects.link(obj)
+    
+    if obj is None:
+        print("issue drawing shape")
+        return None
+        
+    #use for from_pydata
+    verts,edges,faces = shapeData
+    meshData = obj.data
+    meshData.from_pydata(verts,edges,faces)
+    meshData.update()
+    
+    return obj
+
+
+
+def generateRobotFaceMesh(context = bpy.context, character = "TestChar"):
+    """this draws the robot face mesh. and adds materials.
+    needs to check that names for geometry dont exist
+    """
+    
+    #brows
+    browl = ([(1.7577, 0.0, 1.3652), (4.5342, 0.0, 1.3652), (1.7577, 0.0, 2.1959), (4.5342, 0.0, 2.1959)], [(2, 0), (0, 1), (1, 3), (3, 2)], [(0, 1, 3, 2)])
+    drawRobotFaceMeshPart(context=context, name = '{}.L'.format( FACEGEO_NAMES['brow'] ), shapeData = browl )
+    browr = ([(-1.7577, 0.0, 1.3652), (-4.5342, 0.0, 1.3652), (-1.7577, 0.0, 2.1959), (-4.5342, 0.0, 2.1959)], [(2, 0), (0, 1), (1, 3), (3, 2)], [(0, 1, 3, 2)])
+    drawRobotFaceMeshPart(context=context, name = '{}.R'.format( FACEGEO_NAMES['brow'] ), shapeData = browr )
+
+    #eyes
+    eyel = ([(3.7955, 0.0, 0.1671), (3.1459, 0.0, 0.8166), (3.1459, 0.0, -0.4825), (2.4964, 0.0, 0.1671)], [(2, 0), (0, 1), (1, 3), (3, 2)], [(0, 1, 3, 2)])
+    drawRobotFaceMeshPart(context=context, name = '{}.L'.format( FACEGEO_NAMES['eye'] ), shapeData = eyel )
+    eyer = ([(-3.7955, 0.0, 0.1671), (-3.1459, 0.0, 0.8166), (-3.1459, 0.0, -0.4825), (-2.4964, 0.0, 0.1671)], [(2, 0), (0, 1), (1, 3), (3, 2)], [(0, 1, 3, 2)])
+    drawRobotFaceMeshPart(context=context, name = '{}.R'.format( FACEGEO_NAMES['eye'] ), shapeData = eyer )
+    
+    #mouth
+    mouth = ([(-2.0174, 0.0, -3.6893), (2.0174, 0.0, -3.6893), (-2.0174, 0.0, -2.3891), (2.0174, 0.0, -2.3891), (0.0, 0.0, -3.6893), (0.0, 0.0, -2.3891)], [(2, 0), (4, 1), (1, 3), (5, 2), (0, 4), (3, 5), (4, 5)], [(4, 1, 3, 5), (0, 4, 5, 2)])
+    drawRobotFaceMeshPart(context=context, name = '{}'.format( FACEGEO_NAMES['mouth'] ), shapeData = mouth )
+    
+    #head
+    head = ([(-5.0, 0.0548, 4.1438), (-5.0, 0.0548, -4.1438), (-5.0, 5.7728, 4.1438), (-5.0, 5.7728, -4.1438), (5.0, 0.0548, 4.1438), (5.0, 0.0548, -4.1438), (5.0, 5.7728, 4.1438), (5.0, 5.7728, -4.1438)], [(2, 0), (0, 1), (1, 3), (3, 2), (6, 2), (3, 7), (7, 6), (4, 6), (7, 5), (5, 4), (0, 4), (5, 1)], [(0, 1, 3, 2), (2, 3, 7, 6), (6, 7, 5, 4), (4, 5, 1, 0), (2, 6, 4, 0), (7, 3, 1, 5)])
+    drawRobotFaceMeshPart(context=context, name = '{}'.format( FACEGEO_NAMES['head'] ), shapeData = head )
+    
+    #texture model
+    textureModel()
+
+
+def textureModel():
+    """create and assign materials to face geometry
+    """
+    def _isMaterialCreated( matname = '' ):
+        if not matname:
+            return False
+        for mat in bpy.data.materials:
+            if mat.name == matname:
+                return True
+        return False
+    
+    #need to exit if face geometry doesnt exist    
+        
+    #create head material
+    headMatName = '{0}_naSimpleFaceHeadMaterial'.format(FC_CHAR_NAME)
+    headmat = bpy.data.materials.new(headMatName) if not _isMaterialCreated(headMatName) else bpy.data.materials[headMatName]
+    #create face features material
+    partsMatName = '{0}_naSimpleFacePartsMaterial'.format(FC_CHAR_NAME)
+    partsmat = bpy.data.materials.new(partsMatName) if not _isMaterialCreated(partsMatName) else bpy.data.materials[partsMatName]
+    
+    #choose colors for materials
+    headmat.diffuse_color = (0.044,0.211,1.0)
+    partsmat.diffuse_color = (0.034,0.598,0.405)
+    
+    ##assign materials
+    parts = [
+        '{}.L'.format( FACEGEO_NAMES['brow'] ),
+        '{}.R'.format( FACEGEO_NAMES['brow'] ),
+        '{}.L'.format( FACEGEO_NAMES['eye'] ),
+        '{}.R'.format( FACEGEO_NAMES['eye'] ),
+        '{}'.format( FACEGEO_NAMES['mouth'] )
+         ]
+    head = '{}'.format( FACEGEO_NAMES['head'] )
+    
+    #head
+    #not checking if material already assigned
+    bpy.data.objects[head].data.materials.append(headmat)
+    
+    #parts
+    for part in parts:
+        bpy.data.objects[part].data.materials.append(partsmat)
+    
+
+"""
+import bpy
+import sys
+#example if wanted to test script without addon part. change to your path here
+sys.path.append('/Users/Nathaniel/Documents/src_blender/python/riggingTools/faces')
+
+import naSimpleRobotFaceRigAddon as mod
+import imp
+imp.reload(mod)
+#bpy.app.debug=True #temporary
+mod.generateRobotFaceMesh(context = bpy.context)
+mod.doIt(bpy.context)
+"""
+
+
+    
+##inspired by
+#Nathan Vegdahl's rigify
+#https://blender.stackexchange.com/questions/145472/blender-2-8-python-convert-text-to-mesh
+#https://blender.stackexchange.com/questions/143256/animate-text-bpy-ops-transform-translate
+#https://stackoverflow.com/questions/17388912/blender-script-how-to-write-to-text-object
+#https://blender.stackexchange.com/questions/15072/scripting-modifying-an-object-in-edit-mode
+#https://blender.stackexchange.com/questions/51684/python-create-custom-armature-without-ops
+#https://blenderscripting.blogspot.com/2011/06/using-frompydata.html
+#https://blender.stackexchange.com/questions/51684/python-create-custom-armature-without-ops
+#https://blender.stackexchange.com/questions/91400/how-to-add-circle-to-existing-mesh-by-python-script
+#https://blender.stackexchange.com/questions/68907/add-armature-at-each-vertex-location
+#https://github.com/StefanUlbrich/RobotEditor/blob/master/armatures.py
+#https://blender.stackexchange.com/questions/51684/python-create-custom-armature-without-ops
+#https://blenderartists.org/t/making-a-mirror-copy/411641/3         editmode p to separate selected verts after mirror modifier
+#https://blenderartists.org/t/restrict-selection-script-help/512403/2
+#https://blender.stackexchange.com/questions/51290/how-to-add-empty-object-not-using-bpy-ops
+#https://blender.stackexchange.com/questions/112776/how-do-i-prevent-object-from-moving-when-parenting-object-to-a-bone
+#https://blender.stackexchange.com/questions/134250/set-active-bone-in-pose-mode-from-python-script
